@@ -47,6 +47,7 @@ System testing:
 
 * ZeroMQ (libzmq)
 * CMake >= 3.10
+* pkg-config
 * A C compiler (GCC, Clang, etc.)
 
 ## License

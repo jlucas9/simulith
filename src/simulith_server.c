@@ -48,7 +48,7 @@ int simulith_server_init(const char *pub_bind, const char *rep_bind, int client_
 
 static void broadcast_time() {
     zmq_send(publisher, &current_time_ns, sizeof(current_time_ns), 0);
-    simulith_log("Broadcasted time: %lu ns\n", current_time_ns);
+    simulith_log("Broadcasted sim time: %.3f seconds\n", current_time_ns / 1e9);
 }
 
 static int all_clients_responded() {
@@ -69,7 +69,7 @@ static void handle_ack(const char *client_id) {
     for (int i = 0; i < expected_clients; ++i) {
         if (strcmp(client_states[i].id, client_id) == 0) {
             client_states[i].responded = 1;
-            simulith_log("ACK matched existing client: %s\n", client_id);
+            //simulith_log("ACK matched existing client: %s\n", client_id);
             return;
         }
     }
@@ -77,7 +77,7 @@ static void handle_ack(const char *client_id) {
         if (client_states[i].id[0] == '\0') {
             strncpy(client_states[i].id, client_id, sizeof(client_states[i].id) - 1);
             client_states[i].responded = 1;
-            simulith_log("Registered and acknowledged new client: %s\n", client_id);
+            //simulith_log("Registered and acknowledged new client: %s\n", client_id);
             return;
         }
     }
@@ -85,6 +85,30 @@ static void handle_ack(const char *client_id) {
 }
 
 void simulith_server_run(void) {
+    simulith_log("Waiting for clients to be ready...\n");
+
+    // Wait for all clients to send "READY"
+    int ready_clients = 0;
+    while (ready_clients < expected_clients) {
+        char buffer[64] = {0};
+        int size = zmq_recv(responder, buffer, sizeof(buffer) - 1, 0);
+        if (size > 0) {
+            buffer[size] = '\0';
+            if (strcmp(buffer, "READY") == 0) {
+                // You could also receive client ID here if clients send it
+                // For now just count the ready client
+                ready_clients++;
+                zmq_send(responder, "ACK", 3, 0);
+                simulith_log("Received READY from client (%d/%d)\n", ready_clients, expected_clients);
+            }
+        }
+    }
+
+    simulith_log("All clients ready. Starting time broadcast.\n");
+
+    // Reset client responded flags for tick ACKs
+    reset_responses();
+
     while (1) {
         broadcast_time();
         reset_responses();
@@ -96,12 +120,14 @@ void simulith_server_run(void) {
                 buffer[size] = '\0';
                 handle_ack(buffer);
                 zmq_send(responder, "ACK", 3, 0);
-                simulith_log("Received ACK from client: %s\n", buffer);
+                //simulith_log("Received ACK from client: %s\n", buffer);
             }
         }
 
         current_time_ns += tick_interval_ns;
-        usleep(1000);  // Small delay to avoid CPU hog
+        
+        // Commented out for max speed
+        //usleep(1000);
     }
 }
 

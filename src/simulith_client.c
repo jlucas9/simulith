@@ -33,6 +33,32 @@ int simulith_client_init(const char *pub_addr, const char *rep_addr, const char 
     return 0;
 }
 
+int simulith_client_handshake(void) {
+    const char *ready_msg = "READY";
+    const char *ack_msg = "ACK";
+    char buffer[16] = {0};
+
+    if (zmq_send(requester, ready_msg, strlen(ready_msg), 0) == -1) {
+        perror("Failed to send READY");
+        return -1;
+    }
+
+    int size = zmq_recv(requester, buffer, sizeof(buffer) - 1, 0);
+    if (size == -1) {
+        perror("Failed to receive ACK");
+        return -1;
+    }
+
+    buffer[size] = '\0';
+    if (strcmp(buffer, ack_msg) != 0) {
+        fprintf(stderr, "Unexpected reply to READY: %s\n", buffer);
+        return -1;
+    }
+
+    simulith_log("Handshake complete with server.\n");
+    return 0;
+}
+
 void simulith_client_run_loop(simulith_tick_callback on_tick) {
     while (1) {
         uint64_t time_ns;
@@ -47,7 +73,7 @@ void simulith_client_run_loop(simulith_tick_callback on_tick) {
             zmq_send(requester, client_id, strlen(client_id), 0);
             zmq_recv(requester, reply, sizeof(reply) - 1, 0);  // wait for server ACK
 
-            simulith_log("Client [%s] sent ACK and received response: %s\n", client_id, reply);
+            //simulith_log("Client [%s] sent ACK and received response: %s\n", client_id, reply);
         }
     }
 }

@@ -62,6 +62,14 @@ typedef void (*simulith_tick_callback)(uint64_t tick_time_ns);
  */
 int simulith_client_init(const char *pub_addr, const char *rep_addr, const char *id, uint64_t rate_ns);
 
+
+/**
+ * Handshake with the Simulith server.
+ *
+ * @return 0 on success, -1 on error.
+ */
+int simulith_client_handshake(void);
+
 /**
  * Starts the client's main loop.
  *

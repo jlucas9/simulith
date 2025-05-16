@@ -1,61 +1,63 @@
 #include "simulith.h"
 
 static void *client_context = NULL;
-static void *client_subscriber = NULL;
-static uint64_t client_current_time_ns = 0;
+static void *subscriber = NULL;
+static void *requester = NULL;
+static char client_id[64];
+static uint64_t update_rate_ns = 0;
 
-int simulith_client_init(const char *connect_address) {
+int simulith_client_init(const char *pub_addr, const char *rep_addr, const char *id, uint64_t rate_ns) {
+    strncpy(client_id, id, sizeof(client_id) - 1);
+    update_rate_ns = rate_ns;
+
     client_context = zmq_ctx_new();
     if (!client_context) {
         perror("zmq_ctx_new failed");
         return -1;
     }
 
-    client_subscriber = zmq_socket(client_context, ZMQ_SUB);
-    if (!client_subscriber) {
-        perror("zmq_socket failed");
+    subscriber = zmq_socket(client_context, ZMQ_SUB);
+    if (!subscriber || zmq_connect(subscriber, pub_addr) != 0) {
+        perror("Subscriber socket setup failed");
+        return -1;
+    }
+    zmq_setsockopt(subscriber, ZMQ_SUBSCRIBE, "", 0);  // Subscribe to all messages
+
+    requester = zmq_socket(client_context, ZMQ_REQ);
+    if (!requester || zmq_connect(requester, rep_addr) != 0) {
+        perror("Requester socket setup failed");
         return -1;
     }
 
-    if (zmq_connect(client_subscriber, connect_address) != 0) {
-        perror("zmq_connect failed");
-        return -1;
-    }
-
-    if (zmq_setsockopt(client_subscriber, ZMQ_SUBSCRIBE, "", 0) != 0) {
-        perror("zmq_setsockopt failed");
-        return -1;
-    }
-
-    simulith_log("Simulith client connected to %s\n", connect_address);
+    simulith_log("Simulith client [%s] initialized with update rate %lu ns\n", client_id, update_rate_ns);
     return 0;
 }
 
-int simulith_client_wait_for_time(uint64_t expected_time_ns) {
+void simulith_client_run_loop(simulith_tick_callback on_tick) {
     while (1) {
-        uint64_t received_time_ns = 0;
-        int size = zmq_recv(client_subscriber, &received_time_ns, sizeof(received_time_ns), 0);
-        if (size != sizeof(received_time_ns)) {
-            perror("zmq_recv failed or size mismatch");
-            continue;
+        uint64_t time_ns;
+        int recv_bytes = zmq_recv(subscriber, &time_ns, sizeof(time_ns), 0);
+        if (recv_bytes == sizeof(time_ns)) {
+            if (on_tick) {
+                on_tick(time_ns);
+            }
+
+            // Send acknowledgment
+            char reply[16] = {0};
+            zmq_send(requester, client_id, strlen(client_id), 0);
+            zmq_recv(requester, reply, sizeof(reply) - 1, 0);  // wait for server ACK
+
+            simulith_log("Client [%s] sent ACK and received response: %s\n", client_id, reply);
         }
-
-        client_current_time_ns = received_time_ns;
-        simulith_log("Received time update: %lu ns\n", client_current_time_ns);
-
-        if (client_current_time_ns >= expected_time_ns) break;
     }
-    return 0;
-}
-
-uint64_t simulith_client_get_time(void) {
-    return client_current_time_ns;
 }
 
 void simulith_client_shutdown(void) {
-    if (client_subscriber) zmq_close(client_subscriber);
+    if (subscriber) zmq_close(subscriber);
+    if (requester) zmq_close(requester);
     if (client_context) zmq_ctx_term(client_context);
-    client_subscriber = NULL;
+    subscriber = NULL;
+    requester = NULL;
     client_context = NULL;
-    simulith_log("Simulith client shut down\n");
+    simulith_log("Simulith client [%s] shut down\n", client_id);
 }

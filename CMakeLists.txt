@@ -25,17 +25,6 @@ set(SIMULITH_SOURCES
 add_library(simulith STATIC ${SIMULITH_SOURCES})
 target_link_libraries(simulith ${ZeroMQ_LIBRARIES})
 
-# Unit test executable
+# Add tests subdirectory
 enable_testing()
-add_executable(test_simulith test/test_simulith.c unity/unity.c)
-target_include_directories(test_simulith PRIVATE
-    unity
-    include
-    ${ZeroMQ_INCLUDE_DIRS}
-)
-target_link_libraries(test_simulith
-    simulith
-    ${ZeroMQ_LIBRARIES}
-    pthread
-)
-add_test(NAME SimulithTest COMMAND test_simulith)
+add_subdirectory(test)

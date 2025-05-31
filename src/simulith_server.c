@@ -19,6 +19,7 @@ static ClientState client_states[MAX_CLIENTS] = {0};
 static int is_client_id_taken(const char *id) {
     for (int i = 0; i < MAX_CLIENTS; ++i) {
         if (client_states[i].id[0] != '\0' && strcmp(client_states[i].id, id) == 0) {
+            simulith_log("Client ID '%s' is already in use\n", id);
             return 1;
         }
     }
@@ -88,7 +89,6 @@ static void reset_responses() {
 }
 
 static void handle_ack(const char *client_id) {
-    // During tick exchange, we just receive the client ID
     for (int i = 0; i < expected_clients; ++i) {
         if (client_states[i].id[0] != '\0' && strcmp(client_states[i].id, client_id) == 0) {
             client_states[i].responded = 1;
@@ -172,8 +172,6 @@ void simulith_server_run(void) {
             int size = zmq_recv(responder, buffer, sizeof(buffer) - 1, 0);
             if (size > 0) {
                 buffer[size] = '\0';
-                
-                // During tick exchange, we just receive the client ID
                 handle_ack(buffer);
                 zmq_send(responder, "ACK", 3, 0);
             }

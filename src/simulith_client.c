@@ -7,7 +7,24 @@ static char client_id[64];
 static uint64_t update_rate_ns = 0;
 
 int simulith_client_init(const char *pub_addr, const char *rep_addr, const char *id, uint64_t rate_ns) {
+    // Validate parameters
+    if (!pub_addr || !rep_addr || !id) {
+        simulith_log("Invalid parameters: addresses and id cannot be NULL\n");
+        return -1;
+    }
+
+    if (strlen(id) == 0) {
+        simulith_log("Invalid client ID: cannot be empty\n");
+        return -1;
+    }
+
+    if (rate_ns == 0) {
+        simulith_log("Invalid update rate: must be greater than 0\n");
+        return -1;
+    }
+
     strncpy(client_id, id, sizeof(client_id) - 1);
+    client_id[sizeof(client_id) - 1] = '\0';  // Ensure null termination
     update_rate_ns = rate_ns;
 
     client_context = zmq_ctx_new();
@@ -34,9 +51,14 @@ int simulith_client_init(const char *pub_addr, const char *rep_addr, const char 
 }
 
 int simulith_client_handshake(void) {
-    const char *ready_msg = "READY";
+    char ready_msg[80];
+    snprintf(ready_msg, sizeof(ready_msg), "READY %s", client_id);
     const char *ack_msg = "ACK";
     char buffer[16] = {0};
+
+    // Set receive timeout to 1 second
+    int timeout = 1000;  // milliseconds
+    zmq_setsockopt(requester, ZMQ_RCVTIMEO, &timeout, sizeof(timeout));
 
     if (zmq_send(requester, ready_msg, strlen(ready_msg), 0) == -1) {
         perror("Failed to send READY");
@@ -45,15 +67,27 @@ int simulith_client_handshake(void) {
 
     int size = zmq_recv(requester, buffer, sizeof(buffer) - 1, 0);
     if (size == -1) {
-        perror("Failed to receive ACK");
+        if (errno == EAGAIN) {
+            simulith_log("Handshake timeout - server not responding\n");
+        } else {
+            perror("Failed to receive ACK");
+        }
         return -1;
     }
 
     buffer[size] = '\0';
+    if (strcmp(buffer, "DUP_ID") == 0) {
+        simulith_log("Handshake failed - duplicate client ID\n");
+        return -1;
+    }
     if (strcmp(buffer, ack_msg) != 0) {
         fprintf(stderr, "Unexpected reply to READY: %s\n", buffer);
         return -1;
     }
+
+    // Reset timeout to infinite for normal operation
+    timeout = -1;
+    zmq_setsockopt(requester, ZMQ_RCVTIMEO, &timeout, sizeof(timeout));
 
     simulith_log("Handshake complete with server.\n");
     return 0;

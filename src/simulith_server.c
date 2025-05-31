@@ -16,6 +16,17 @@ static int expected_clients = 0;
 static ClientState client_states[MAX_CLIENTS];
 
 int simulith_server_init(const char *pub_bind, const char *rep_bind, int client_count, uint64_t interval_ns) {
+    // Validate parameters
+    if (client_count <= 0 || client_count > MAX_CLIENTS) {
+        simulith_log("Invalid client count: %d (must be between 1 and %d)\n", client_count, MAX_CLIENTS);
+        return -1;
+    }
+    
+    if (interval_ns == 0) {
+        simulith_log("Invalid interval: must be greater than 0\n");
+        return -1;
+    }
+
     expected_clients = client_count;
     tick_interval_ns = interval_ns;
 
@@ -48,7 +59,7 @@ int simulith_server_init(const char *pub_bind, const char *rep_bind, int client_
 
 static void broadcast_time() {
     zmq_send(publisher, &current_time_ns, sizeof(current_time_ns), 0);
-    simulith_log("Broadcasted sim time: %.3f seconds\n", current_time_ns / 1e9);
+    simulith_log("Broadcasted time: %.3f sim seconds\n", current_time_ns / 1e9);
 }
 
 static int all_clients_responded() {
@@ -65,6 +76,15 @@ static void reset_responses() {
     }
 }
 
+static int is_client_id_taken(const char *id) {
+    for (int i = 0; i < MAX_CLIENTS; ++i) {
+        if (client_states[i].id[0] != '\0' && strcmp(client_states[i].id, id) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static void handle_ack(const char *client_id) {
     for (int i = 0; i < expected_clients; ++i) {
         if (strcmp(client_states[i].id, client_id) == 0) {
@@ -73,15 +93,7 @@ static void handle_ack(const char *client_id) {
             return;
         }
     }
-    for (int i = 0; i < expected_clients; ++i) {
-        if (client_states[i].id[0] == '\0') {
-            strncpy(client_states[i].id, client_id, sizeof(client_states[i].id) - 1);
-            client_states[i].responded = 1;
-            //simulith_log("Registered and acknowledged new client: %s\n", client_id);
-            return;
-        }
-    }
-    simulith_log("ACK received from unknown client (all slots full): %s\n", client_id);
+    simulith_log("ACK received from unknown client: %s\n", client_id);
 }
 
 void simulith_server_run(void) {
@@ -94,12 +106,29 @@ void simulith_server_run(void) {
         int size = zmq_recv(responder, buffer, sizeof(buffer) - 1, 0);
         if (size > 0) {
             buffer[size] = '\0';
-            if (strcmp(buffer, "READY") == 0) {
-                // You could also receive client ID here if clients send it
-                // For now just count the ready client
+            char *space = strchr(buffer, ' ');
+            if (space && strncmp(buffer, "READY", 5) == 0) {
+                char *client_id = space + 1;
+                
+                // Check for duplicate client ID
+                if (is_client_id_taken(client_id)) {
+                    simulith_log("Rejecting duplicate client ID: %s\n", client_id);
+                    zmq_send(responder, "DUP_ID", 6, 0);
+                    continue;
+                }
+
+                // Store client ID
+                for (int i = 0; i < MAX_CLIENTS; ++i) {
+                    if (client_states[i].id[0] == '\0') {
+                        strncpy(client_states[i].id, client_id, sizeof(client_states[i].id) - 1);
+                        client_states[i].id[sizeof(client_states[i].id) - 1] = '\0';
+                        break;
+                    }
+                }
+
                 ready_clients++;
                 zmq_send(responder, "ACK", 3, 0);
-                simulith_log("Received READY from client (%d/%d)\n", ready_clients, expected_clients);
+                simulith_log("Received READY from client %s (%d/%d)\n", client_id, ready_clients, expected_clients);
             }
         }
     }

@@ -13,8 +13,3 @@ include_directories(
 add_executable(test_simulith test_simulith.c ${UNITY_SRC})
 target_link_libraries(test_simulith simulith ${ZeroMQ_LIBRARIES} pthread)
 add_test(NAME SimulithTest COMMAND test_simulith)
-
-## Performance test executable
-#add_executable(test_simulith_performance test_simulith_performance.c ${UNITY_SRC})
-#target_link_libraries(test_simulith_performance simulith ${ZeroMQ_LIBRARIES} pthread)
-#add_test(NAME SimulithPerformanceTest COMMAND test_simulith_performance)

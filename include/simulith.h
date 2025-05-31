@@ -13,6 +13,7 @@
 #include <zmq.h>
 
 // Include hardware interface headers
+#include "simulith_can.h"
 #include "simulith_i2c.h"
 #include "simulith_spi.h"
 #include "simulith_uart.h"

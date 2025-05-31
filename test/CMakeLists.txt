@@ -14,6 +14,11 @@ add_executable(test_simulith test_simulith.c ${UNITY_SRC})
 target_link_libraries(test_simulith simulith ${ZeroMQ_LIBRARIES} pthread)
 add_test(NAME SimulithTest COMMAND test_simulith)
 
+# CAN tests executable
+add_executable(test_can test_can.c ${UNITY_SRC})
+target_link_libraries(test_can simulith ${ZeroMQ_LIBRARIES})
+add_test(NAME CANTest COMMAND test_can)
+
 # I2C tests executable
 add_executable(test_i2c test_i2c.c ${UNITY_SRC})
 target_link_libraries(test_i2c simulith ${ZeroMQ_LIBRARIES})

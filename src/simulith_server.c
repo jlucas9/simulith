@@ -1,4 +1,5 @@
 #include "simulith.h"
+#include <string.h>
 
 #define MAX_CLIENTS 32
 
@@ -13,7 +14,16 @@ static void *responder = NULL;
 static uint64_t current_time_ns = 0;
 static uint64_t tick_interval_ns = 0;
 static int expected_clients = 0;
-static ClientState client_states[MAX_CLIENTS];
+static ClientState client_states[MAX_CLIENTS] = {0};
+
+static int is_client_id_taken(const char *id) {
+    for (int i = 0; i < MAX_CLIENTS; ++i) {
+        if (client_states[i].id[0] != '\0' && strcmp(client_states[i].id, id) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
 
 int simulith_server_init(const char *pub_bind, const char *rep_bind, int client_count, uint64_t interval_ns) {
     // Validate parameters
@@ -48,6 +58,7 @@ int simulith_server_init(const char *pub_bind, const char *rep_bind, int client_
         return -1;
     }
 
+    // Initialize client states
     for (int i = 0; i < MAX_CLIENTS; ++i) {
         client_states[i].id[0] = '\0';
         client_states[i].responded = 0;
@@ -76,20 +87,11 @@ static void reset_responses() {
     }
 }
 
-static int is_client_id_taken(const char *id) {
-    for (int i = 0; i < MAX_CLIENTS; ++i) {
-        if (client_states[i].id[0] != '\0' && strcmp(client_states[i].id, id) == 0) {
-            return 1;
-        }
-    }
-    return 0;
-}
-
 static void handle_ack(const char *client_id) {
+    // During tick exchange, we just receive the client ID
     for (int i = 0; i < expected_clients; ++i) {
-        if (strcmp(client_states[i].id, client_id) == 0) {
+        if (client_states[i].id[0] != '\0' && strcmp(client_states[i].id, client_id) == 0) {
             client_states[i].responded = 1;
-            //simulith_log("ACK matched existing client: %s\n", client_id);
             return;
         }
     }
@@ -106,30 +108,53 @@ void simulith_server_run(void) {
         int size = zmq_recv(responder, buffer, sizeof(buffer) - 1, 0);
         if (size > 0) {
             buffer[size] = '\0';
+            
+            // Parse READY message
             char *space = strchr(buffer, ' ');
-            if (space && strncmp(buffer, "READY", 5) == 0) {
-                char *client_id = space + 1;
-                
-                // Check for duplicate client ID
-                if (is_client_id_taken(client_id)) {
-                    simulith_log("Rejecting duplicate client ID: %s\n", client_id);
-                    zmq_send(responder, "DUP_ID", 6, 0);
-                    continue;
-                }
-
-                // Store client ID
-                for (int i = 0; i < MAX_CLIENTS; ++i) {
-                    if (client_states[i].id[0] == '\0') {
-                        strncpy(client_states[i].id, client_id, sizeof(client_states[i].id) - 1);
-                        client_states[i].id[sizeof(client_states[i].id) - 1] = '\0';
-                        break;
-                    }
-                }
-
-                ready_clients++;
-                zmq_send(responder, "ACK", 3, 0);
-                simulith_log("Received READY from client %s (%d/%d)\n", client_id, ready_clients, expected_clients);
+            if (!space || strncmp(buffer, "READY", 5) != 0) {
+                simulith_log("Invalid handshake message: %s\n", buffer);
+                zmq_send(responder, "ERR", 3, 0);
+                continue;
             }
+
+            // Extract client ID (skip "READY " prefix)
+            char *client_id = space + 1;
+            if (strlen(client_id) == 0) {
+                simulith_log("Empty client ID in handshake\n");
+                zmq_send(responder, "ERR", 3, 0);
+                continue;
+            }
+
+            // Check for duplicate client ID
+            if (is_client_id_taken(client_id)) {
+                simulith_log("Rejecting duplicate client ID: %s\n", client_id);
+                zmq_send(responder, "DUP_ID", 6, 0);
+                continue;
+            }
+
+            // Find empty slot and store client ID
+            int slot = -1;
+            for (int i = 0; i < MAX_CLIENTS; ++i) {
+                if (client_states[i].id[0] == '\0') {
+                    slot = i;
+                    break;
+                }
+            }
+
+            if (slot == -1) {
+                simulith_log("No available slots for new client\n");
+                zmq_send(responder, "ERR", 3, 0);
+                continue;
+            }
+
+            // Register client
+            strncpy(client_states[slot].id, client_id, sizeof(client_states[slot].id) - 1);
+            client_states[slot].id[sizeof(client_states[slot].id) - 1] = '\0';
+            client_states[slot].responded = 0;
+            ready_clients++;
+
+            zmq_send(responder, "ACK", 3, 0);
+            simulith_log("Registered client %s (%d/%d)\n", client_id, ready_clients, expected_clients);
         }
     }
 
@@ -147,16 +172,14 @@ void simulith_server_run(void) {
             int size = zmq_recv(responder, buffer, sizeof(buffer) - 1, 0);
             if (size > 0) {
                 buffer[size] = '\0';
+                
+                // During tick exchange, we just receive the client ID
                 handle_ack(buffer);
                 zmq_send(responder, "ACK", 3, 0);
-                //simulith_log("Received ACK from client: %s\n", buffer);
             }
         }
 
         current_time_ns += tick_interval_ns;
-        
-        // Commented out for max speed
-        //usleep(1000);
     }
 }
 

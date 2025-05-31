@@ -51,6 +51,7 @@ int simulith_client_init(const char *pub_addr, const char *rep_addr, const char 
 }
 
 int simulith_client_handshake(void) {
+    // Format READY message with client ID
     char ready_msg[80];
     snprintf(ready_msg, sizeof(ready_msg), "READY %s", client_id);
     const char *ack_msg = "ACK";
@@ -60,11 +61,13 @@ int simulith_client_handshake(void) {
     int timeout = 1000;  // milliseconds
     zmq_setsockopt(requester, ZMQ_RCVTIMEO, &timeout, sizeof(timeout));
 
+    // Send READY message with client ID
     if (zmq_send(requester, ready_msg, strlen(ready_msg), 0) == -1) {
         perror("Failed to send READY");
         return -1;
     }
 
+    // Wait for server response
     int size = zmq_recv(requester, buffer, sizeof(buffer) - 1, 0);
     if (size == -1) {
         if (errno == EAGAIN) {
@@ -76,12 +79,16 @@ int simulith_client_handshake(void) {
     }
 
     buffer[size] = '\0';
+    
+    // Check for duplicate ID rejection
     if (strcmp(buffer, "DUP_ID") == 0) {
-        simulith_log("Handshake failed - duplicate client ID\n");
+        simulith_log("Handshake failed - duplicate client ID: %s\n", client_id);
         return -1;
     }
+    
+    // Check for valid ACK
     if (strcmp(buffer, ack_msg) != 0) {
-        fprintf(stderr, "Unexpected reply to READY: %s\n", buffer);
+        simulith_log("Unexpected reply to READY: %s\n", buffer);
         return -1;
     }
 
@@ -102,12 +109,10 @@ void simulith_client_run_loop(simulith_tick_callback on_tick) {
                 on_tick(time_ns);
             }
 
-            // Send acknowledgment
+            // Send acknowledgment - just send the client ID
             char reply[16] = {0};
             zmq_send(requester, client_id, strlen(client_id), 0);
             zmq_recv(requester, reply, sizeof(reply) - 1, 0);  // wait for server ACK
-
-            //simulith_log("Client [%s] sent ACK and received response: %s\n", client_id, reply);
         }
     }
 }

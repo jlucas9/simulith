@@ -10,7 +10,7 @@
 
 #define CLIENT_ID "test_client"
 #define INTERVAL_NS 10 * 1000000  // 10 ms
-#define TEST_TIME_S 5 // seconds
+#define TEST_TIME_S 3 // seconds
 
 static int ticks_received = 0;
 
@@ -126,11 +126,13 @@ void test_client_handshake_no_server(void) {
 void *duplicate_client_thread(void *arg) {
     sleep(1);  // Wait for first client to connect
     
+    // Initialize the second client with same ID
     int result = simulith_client_init(PUB_ADDR, REP_ADDR, CLIENT_ID, INTERVAL_NS);
     TEST_ASSERT_EQUAL_INT(0, result);
     
+    // Try handshake - should fail due to duplicate ID
     result = simulith_client_handshake();
-    TEST_ASSERT_EQUAL_INT(-1, result);  // Should fail due to duplicate ID
+    TEST_ASSERT_EQUAL_INT(-1, result);  // This is what we're testing for!
     
     simulith_client_shutdown();
     return NULL;
@@ -139,11 +141,16 @@ void *duplicate_client_thread(void *arg) {
 void test_duplicate_client_ids(void) {
     pthread_t server, client1, client2;
     
+    // Start server
     pthread_create(&server, NULL, server_thread, NULL);
+    
+    // Start first client
     pthread_create(&client1, NULL, client_thread, NULL);
+    
+    // Start second client (with same ID)
     pthread_create(&client2, NULL, duplicate_client_thread, NULL);
     
-    sleep(3);  // Allow time for test to complete
+    sleep(TEST_TIME_S);  // Allow time for test to complete
     
     pthread_cancel(client2);
     pthread_cancel(client1);
@@ -156,18 +163,12 @@ void test_duplicate_client_ids(void) {
 int main(void) {
     UNITY_BEGIN();
     
-    // Original test
+    // Original tests
     RUN_TEST(test_synchronization_tick_exchange);
-    
-    // Server initialization tests
     RUN_TEST(test_server_init_invalid_address);
     RUN_TEST(test_server_init_invalid_params);
-    
-    // Client initialization tests
     RUN_TEST(test_client_init_invalid_address);
     RUN_TEST(test_client_init_invalid_params);
-    
-    // Connection tests
     RUN_TEST(test_client_handshake_no_server);
     RUN_TEST(test_duplicate_client_ids);
     

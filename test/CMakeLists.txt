@@ -9,7 +9,12 @@ include_directories(
     ${ZeroMQ_INCLUDE_DIRS}
 )
 
-# Functional tests executable
+# Main simulith tests executable
 add_executable(test_simulith test_simulith.c ${UNITY_SRC})
 target_link_libraries(test_simulith simulith ${ZeroMQ_LIBRARIES} pthread)
 add_test(NAME SimulithTest COMMAND test_simulith)
+
+# I2C tests executable
+add_executable(test_i2c test_i2c.c ${UNITY_SRC})
+target_link_libraries(test_i2c simulith ${ZeroMQ_LIBRARIES})
+add_test(NAME I2CTest COMMAND test_i2c)

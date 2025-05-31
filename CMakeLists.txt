@@ -22,6 +22,7 @@ set(SIMULITH_SOURCES
     src/simulith_can.c
     src/simulith_gpio.c
     src/simulith_i2c.c
+    src/simulith_pwm.c
     src/simulith_spi.c
     src/simulith_uart.c
 )

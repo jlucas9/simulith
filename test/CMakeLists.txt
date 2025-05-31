@@ -29,6 +29,11 @@ add_executable(test_i2c test_i2c.c ${UNITY_SRC})
 target_link_libraries(test_i2c simulith ${ZeroMQ_LIBRARIES})
 add_test(NAME I2CTest COMMAND test_i2c)
 
+# PWM tests executable
+add_executable(test_pwm test_pwm.c ${UNITY_SRC})
+target_link_libraries(test_pwm simulith ${ZeroMQ_LIBRARIES})
+add_test(NAME PWMTest COMMAND test_pwm)
+
 # SPI tests executable
 add_executable(test_spi test_spi.c ${UNITY_SRC})
 target_link_libraries(test_spi simulith ${ZeroMQ_LIBRARIES})

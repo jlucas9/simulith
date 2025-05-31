@@ -19,6 +19,11 @@ add_executable(test_can test_can.c ${UNITY_SRC})
 target_link_libraries(test_can simulith ${ZeroMQ_LIBRARIES})
 add_test(NAME CANTest COMMAND test_can)
 
+# GPIO tests executable
+add_executable(test_gpio test_gpio.c ${UNITY_SRC})
+target_link_libraries(test_gpio simulith ${ZeroMQ_LIBRARIES})
+add_test(NAME GPIOTest COMMAND test_gpio)
+
 # I2C tests executable
 add_executable(test_i2c test_i2c.c ${UNITY_SRC})
 target_link_libraries(test_i2c simulith ${ZeroMQ_LIBRARIES})

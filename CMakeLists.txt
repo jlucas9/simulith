@@ -20,6 +20,7 @@ set(SIMULITH_SOURCES
     src/simulith_client.c
     src/simulith_server.c
     src/simulith_i2c.c
+    src/simulith_spi.c
     src/simulith_uart.c
 )
 

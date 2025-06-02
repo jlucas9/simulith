@@ -31,6 +31,13 @@ set(SIMULITH_SOURCES
 add_library(simulith STATIC ${SIMULITH_SOURCES})
 target_link_libraries(simulith ${ZeroMQ_LIBRARIES})
 
+# Build Simulith server standalone
+add_executable(simulith_server_standalone 
+                src/simulith_common.c
+                src/simulith_server.c
+                src/simulith_server_standalone.c)
+target_link_libraries(simulith_server_standalone ${ZeroMQ_LIBRARIES})
+
 # Add tests subdirectory
 enable_testing()
 add_subdirectory(test)

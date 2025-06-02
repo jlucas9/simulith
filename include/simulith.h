@@ -16,8 +16,14 @@
 #include "simulith_can.h"
 #include "simulith_gpio.h"
 #include "simulith_i2c.h"
+#include "simulith_pwm.h"
 #include "simulith_spi.h"
 #include "simulith_uart.h"
+
+// Defines
+#define PUB_ADDR     "ipc:///tmp/simulith_pub.ipc"
+#define REP_ADDR     "ipc:///tmp/simulith_rep.ipc"
+#define INTERVAL_NS 10 * 1000000 // 10 ms
 
 #ifdef __cplusplus
 extern "C"

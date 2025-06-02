@@ -1,5 +1,4 @@
 #include "simulith.h"
-#include <string.h>
 
 #define MAX_CLIENTS 32
 

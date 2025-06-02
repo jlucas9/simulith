@@ -4,12 +4,8 @@
 #include <unistd.h>
 #include <string.h>
 
-#define PUB_ADDR     "ipc:///tmp/simulith_pub.ipc"
-#define REP_ADDR     "ipc:///tmp/simulith_rep.ipc"
 #define INVALID_ADDR "invalid://address"
-
 #define CLIENT_ID   "test_client"
-#define INTERVAL_NS 10 * 1000000 // 10 ms
 #define TEST_TIME_S 3            // seconds
 
 static int ticks_received = 0;

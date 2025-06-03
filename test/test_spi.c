@@ -119,7 +119,7 @@ void test_spi_invalid_operations(void)
                                     .cs_polarity = SIMULITH_SPI_CS_ACTIVE_LOW,
                                     .data_bits   = 8};
 
-    uint8_t data[4];
+    uint8_t data[4] = {0x00, 0x00, 0x00, 0x00};
 
     // Test operations on uninitialized bus
     TEST_ASSERT_EQUAL_INT(-1, simulith_spi_transfer(0, 0, data, data, sizeof(data)));

@@ -91,7 +91,7 @@ void test_uart_invalid_operations(void)
                                      .parity       = SIMULITH_UART_PARITY_NONE,
                                      .flow_control = SIMULITH_UART_FLOW_NONE};
 
-    uint8_t data[16];
+    uint8_t data[16] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
 
     // Test operations on uninitialized port
     TEST_ASSERT_EQUAL_INT(-1, simulith_uart_send(0, data, sizeof(data)));

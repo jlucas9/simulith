@@ -38,8 +38,8 @@ extern "C"
     /**
      * Initialize the Simulith server.
      *
-     * @param pub_bind The ZeroMQ PUB socket bind address (e.g., "tcp://*:5555").
-     * @param rep_bind The ZeroMQ REP socket bind address (e.g., "tcp://*:5556").
+     * @param pub_bind The ZeroMQ PUB socket bind address (e.g., "tcp://0.0.0.0:5555").
+     * @param rep_bind The ZeroMQ REP socket bind address (e.g., "tcp://0.0.0.0:5556").
      * @param client_count The number of clients to wait for per tick.
      * @param interval_ns The tick interval in nanoseconds.
      * @return 0 on success, -1 on error.

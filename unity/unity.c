@@ -7,6 +7,10 @@
 
 #include "unity.h"
 
+#ifdef __GNUC__
+#pragma GCC diagnostic ignored "-Wfloat-equal"
+#endif
+
 #ifndef UNITY_PROGMEM
 #define UNITY_PROGMEM
 #endif

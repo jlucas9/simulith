@@ -8,6 +8,17 @@ set(CMAKE_C_STANDARD_REQUIRED ON)
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(ZeroMQ REQUIRED libzmq)
 
+# Compiler flags
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wall -Werror")
+endif()
+
+# Create Unity library with specific compiler flags
+add_library(unity STATIC unity/unity.c)
+if(CMAKE_C_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(unity PRIVATE -Wno-float-equal)
+endif()
+
 include_directories(
     include
     unity

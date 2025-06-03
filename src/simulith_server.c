@@ -79,13 +79,13 @@ int simulith_server_init(const char *pub_bind, const char *rep_bind, int client_
     return 0;
 }
 
-static void broadcast_time()
+static void broadcast_time(void)
 {
     zmq_send(publisher, &current_time_ns, sizeof(current_time_ns), 0);
     simulith_log("Broadcasted time: %.3f sim seconds\n", current_time_ns / 1e9);
 }
 
-static int all_clients_responded()
+static int all_clients_responded(void)
 {
     int count = 0;
     for (int i = 0; i < expected_clients; ++i)
@@ -96,7 +96,7 @@ static int all_clients_responded()
     return count == expected_clients;
 }
 
-static void reset_responses()
+static void reset_responses(void)
 {
     for (int i = 0; i < expected_clients; ++i)
     {

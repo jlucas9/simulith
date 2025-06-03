@@ -125,9 +125,9 @@ int simulith_spi_transfer(uint8_t bus_id, uint8_t cs_id, const uint8_t *tx_data,
     if (result > 0 && rx_data)
     {
         simulith_log("RX[");
-        for (size_t i = 0; i < result; i++)
+        for (size_t i = 0; i < (size_t) result; i++)
         {
-            simulith_log("%02X%s", rx_data[i], i < result - 1 ? " " : "");
+            simulith_log("%02X%s", rx_data[i], i < (size_t) result - 1 ? " " : "");
         }
         simulith_log("]");
     }

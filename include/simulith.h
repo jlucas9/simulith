@@ -12,12 +12,13 @@
 #include <unistd.h>
 #include <zmq.h>
 
-// Include hardware interface headers
+// Include interface headers
 #include "simulith_can.h"
 #include "simulith_gpio.h"
 #include "simulith_i2c.h"
 #include "simulith_pwm.h"
 #include "simulith_spi.h"
+#include "simulith_time.h"
 #include "simulith_uart.h"
 
 // Defines

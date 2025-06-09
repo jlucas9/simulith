@@ -1,25 +1,18 @@
 #ifndef SIMULITH_UART_H
 #define SIMULITH_UART_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+
+#define MAX_UART_PORTS 16
+#define RX_BUFFER_SIZE 4096
 
 #ifdef __cplusplus
 extern "C"
 {
 #endif
-
-    /**
-     * @brief UART configuration structure
-     */
-    typedef struct
-    {
-        uint32_t baud_rate;    /**< Baud rate (e.g., 9600, 115200) */
-        uint8_t  data_bits;    /**< Data bits (5-8) */
-        uint8_t  stop_bits;    /**< Stop bits (1-2) */
-        uint8_t  parity;       /**< 0=none, 1=odd, 2=even */
-        uint8_t  flow_control; /**< 0=none, 1=hardware, 2=software */
-    } simulith_uart_config_t;
 
     /**
      * @brief Callback function type for UART receive operations
@@ -36,8 +29,9 @@ extern "C"
      * @param config UART configuration structure
      * @param rx_cb Callback function for receive operations (NULL if not used)
      * @return 0 on success, -1 on failure
+     * @note Each port automatically connects to the port with the same ID in other devices
      */
-    int simulith_uart_init(uint8_t port_id, const simulith_uart_config_t *config, simulith_uart_rx_callback rx_cb);
+    int simulith_uart_init(uint8_t port_id, simulith_uart_rx_callback rx_cb);
 
     /**
      * @brief Send data over UART
@@ -70,15 +64,6 @@ extern "C"
      * @return 0 on success, -1 on failure
      */
     int simulith_uart_close(uint8_t port_id);
-
-// Constants for UART configuration
-#define SIMULITH_UART_PARITY_NONE 0
-#define SIMULITH_UART_PARITY_ODD  1
-#define SIMULITH_UART_PARITY_EVEN 2
-
-#define SIMULITH_UART_FLOW_NONE     0
-#define SIMULITH_UART_FLOW_HARDWARE 1
-#define SIMULITH_UART_FLOW_SOFTWARE 2
 
 #ifdef __cplusplus
 }

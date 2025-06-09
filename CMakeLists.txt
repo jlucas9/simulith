@@ -30,6 +30,7 @@ set(SIMULITH_SOURCES
     src/simulith_common.c
     src/simulith_client.c
     src/simulith_server.c
+    src/simulith_time.c
     src/simulith_can.c
     src/simulith_gpio.c
     src/simulith_i2c.c

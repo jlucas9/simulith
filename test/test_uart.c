@@ -1,153 +1,132 @@
+#include <unity.h>
 #include "simulith_uart.h"
-#include "unity.h"
 #include <string.h>
+
+static uint8_t rx_data[256];
+static size_t rx_len;
+static uint8_t rx_port;
 
 void setUp(void)
 {
-    // Setup code if needed
+    printf("\ntest_uart.c setUp..\n");
+    rx_len = 0;
+    rx_port = 0;
+    memset(rx_data, 0, sizeof(rx_data));
 }
 
 void tearDown(void)
 {
-    // Cleanup code if needed
-}
-
-static int     rx_data_received = 0;
-static uint8_t rx_buffer[256];
-
-static int test_uart_rx_cb(uint8_t port_id, const uint8_t *data, size_t len)
-{
-    if (len <= sizeof(rx_buffer))
-    {
-        memcpy(rx_buffer, data, len);
-        rx_data_received = len;
-        return len;
-    }
-    return -1;
-}
-
-void test_uart_init(void)
-{
-    simulith_uart_config_t config = {.baud_rate    = 115200,
-                                     .data_bits    = 8,
-                                     .stop_bits    = 1,
-                                     .parity       = SIMULITH_UART_PARITY_NONE,
-                                     .flow_control = SIMULITH_UART_FLOW_NONE};
-
-    // Test invalid port ID
-    TEST_ASSERT_EQUAL_INT(-1, simulith_uart_init(8, &config, test_uart_rx_cb));
-
-    // Test NULL config
-    TEST_ASSERT_EQUAL_INT(-1, simulith_uart_init(0, NULL, test_uart_rx_cb));
-
-    // Test invalid baud rate
-    config.baud_rate = 1234;
-    TEST_ASSERT_EQUAL_INT(-1, simulith_uart_init(0, &config, test_uart_rx_cb));
-
-    // Test invalid data bits
-    config.baud_rate = 115200;
-    config.data_bits = 9;
-    TEST_ASSERT_EQUAL_INT(-1, simulith_uart_init(0, &config, test_uart_rx_cb));
-
-    // Test successful initialization
-    config.data_bits = 8;
-    TEST_ASSERT_EQUAL_INT(0, simulith_uart_init(0, &config, test_uart_rx_cb));
-
-    // Test duplicate initialization
-    TEST_ASSERT_EQUAL_INT(-1, simulith_uart_init(0, &config, test_uart_rx_cb));
-
-    // Clean up
-    simulith_uart_close(0);
-}
-
-void test_uart_send_receive(void)
-{
-    simulith_uart_config_t config = {.baud_rate    = 115200,
-                                     .data_bits    = 8,
-                                     .stop_bits    = 1,
-                                     .parity       = SIMULITH_UART_PARITY_NONE,
-                                     .flow_control = SIMULITH_UART_FLOW_NONE};
-
-    // Initialize UART
-    TEST_ASSERT_EQUAL_INT(0, simulith_uart_init(0, &config, test_uart_rx_cb));
-
-    // Test send operation
-    const uint8_t test_data[] = {0x12, 0x34, 0x56, 0x78};
-    TEST_ASSERT_EQUAL_INT(sizeof(test_data), simulith_uart_send(0, test_data, sizeof(test_data)));
-
-    // Verify received data through callback
-    TEST_ASSERT_EQUAL_INT(sizeof(test_data), rx_data_received);
-    TEST_ASSERT_EQUAL_UINT8_ARRAY(test_data, rx_buffer, sizeof(test_data));
-
-    // Clean up
-    simulith_uart_close(0);
-}
-
-void test_uart_invalid_operations(void)
-{
-    simulith_uart_config_t config = {.baud_rate    = 115200,
-                                     .data_bits    = 8,
-                                     .stop_bits    = 1,
-                                     .parity       = SIMULITH_UART_PARITY_NONE,
-                                     .flow_control = SIMULITH_UART_FLOW_NONE};
-
-    uint8_t data[16] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-
-    // Test operations on uninitialized port
-    TEST_ASSERT_EQUAL_INT(-1, simulith_uart_send(0, data, sizeof(data)));
-    TEST_ASSERT_EQUAL_INT(-1, simulith_uart_receive(0, data, sizeof(data)));
-    TEST_ASSERT_EQUAL_INT(-1, simulith_uart_available(0));
-    TEST_ASSERT_EQUAL_INT(-1, simulith_uart_close(0));
-
-    // Initialize port
-    TEST_ASSERT_EQUAL_INT(0, simulith_uart_init(0, &config, test_uart_rx_cb));
-
-    // Test invalid parameters
-    TEST_ASSERT_EQUAL_INT(-1, simulith_uart_send(0, NULL, 16));
-    TEST_ASSERT_EQUAL_INT(-1, simulith_uart_send(0, data, 0));
-    TEST_ASSERT_EQUAL_INT(-1, simulith_uart_receive(0, NULL, 16));
-    TEST_ASSERT_EQUAL_INT(-1, simulith_uart_receive(0, data, 0));
-
-    // Clean up
-    simulith_uart_close(0);
-}
-
-void test_uart_multiple_ports(void)
-{
-    simulith_uart_config_t config = {.baud_rate    = 115200,
-                                     .data_bits    = 8,
-                                     .stop_bits    = 1,
-                                     .parity       = SIMULITH_UART_PARITY_NONE,
-                                     .flow_control = SIMULITH_UART_FLOW_NONE};
-
-    // Initialize multiple ports
-    for (uint8_t i = 0; i < 3; i++)
-    {
-        TEST_ASSERT_EQUAL_INT(0, simulith_uart_init(i, &config, test_uart_rx_cb));
-    }
-
-    // Test sending data on each port
-    const uint8_t test_data[] = {0xAA, 0xBB};
-    for (uint8_t i = 0; i < 3; i++)
-    {
-        TEST_ASSERT_EQUAL_INT(sizeof(test_data), simulith_uart_send(i, test_data, sizeof(test_data)));
-    }
-
-    // Clean up
-    for (uint8_t i = 0; i < 3; i++)
+    printf("\ntest_uart.c tearDown..\n");
+    // Close all ports
+    for (int i = 0; i < MAX_UART_PORTS * 2; i++)
     {
         simulith_uart_close(i);
     }
 }
 
+static int rx_callback(uint8_t port, const uint8_t *data, size_t len)
+{
+    rx_port = port;
+    rx_len = len;
+    memcpy(rx_data, data, len);
+    return len;  // Return number of bytes processed
+}
+
+void test_uart_init_basic(void)
+{
+    int result = simulith_uart_init(0, rx_callback);
+    TEST_ASSERT_EQUAL(0, result);
+
+    result = simulith_uart_init(1, rx_callback);
+    TEST_ASSERT_EQUAL(1, result);
+}
+
+void test_uart_init_auto_assignment(void)
+{
+    // Initialize first pair
+    int port0 = simulith_uart_init(0, rx_callback);
+    TEST_ASSERT_EQUAL(0, port0);
+    
+    int port1 = simulith_uart_init(1, rx_callback);
+    TEST_ASSERT_EQUAL(1, port1);
+
+    // Try to initialize port 0 again - should get next available pair
+    int port0_new = simulith_uart_init(0, rx_callback);
+    TEST_ASSERT_EQUAL(MAX_UART_PORTS, port0_new);
+
+    // Initialize its pair
+    int port1_new = simulith_uart_init(1, rx_callback);
+    TEST_ASSERT_EQUAL(MAX_UART_PORTS + 1, port1_new);
+}
+
+void test_uart_send_receive_basic(void)
+{
+    simulith_uart_init(0, rx_callback);
+    simulith_uart_init(1, rx_callback);
+
+    uint8_t test_data[] = {0x12, 0x34, 0x56};
+    int sent = simulith_uart_send(0, test_data, sizeof(test_data));
+
+    TEST_ASSERT_EQUAL(sizeof(test_data), sent);
+    TEST_ASSERT_EQUAL(1, rx_port);
+    TEST_ASSERT_EQUAL(sizeof(test_data), rx_len);
+    TEST_ASSERT_EQUAL_MEMORY(test_data, rx_data, sizeof(test_data));
+}
+
+void test_uart_send_receive_extended_ports(void)
+{
+    // Initialize extended ports (MAX_UART_PORTS and MAX_UART_PORTS + 1)
+    int port0 = simulith_uart_init(0, rx_callback);
+    int port1 = simulith_uart_init(1, rx_callback);
+    TEST_ASSERT_EQUAL(0, port0);
+    TEST_ASSERT_EQUAL(1, port1);
+
+    int port2 = simulith_uart_init(0, rx_callback);  // Should get MAX_UART_PORTS
+    int port3 = simulith_uart_init(1, rx_callback);  // Should get MAX_UART_PORTS + 1
+    TEST_ASSERT_EQUAL(MAX_UART_PORTS, port2);
+    TEST_ASSERT_EQUAL(MAX_UART_PORTS + 1, port3);
+
+    // Test sending data between extended ports
+    uint8_t test_data[] = {0xAA, 0xBB, 0xCC};
+    int sent = simulith_uart_send(port2, test_data, sizeof(test_data));
+
+    TEST_ASSERT_EQUAL(sizeof(test_data), sent);
+    TEST_ASSERT_EQUAL(port3, rx_port);
+    TEST_ASSERT_EQUAL(sizeof(test_data), rx_len);
+    TEST_ASSERT_EQUAL_MEMORY(test_data, rx_data, sizeof(test_data));
+}
+
+void test_uart_send_receive_multiple_pairs(void)
+{
+    // Initialize multiple port pairs
+    int ports[4];
+    ports[0] = simulith_uart_init(0, rx_callback);  // Should get 0
+    ports[1] = simulith_uart_init(1, rx_callback);  // Should get 1
+    ports[2] = simulith_uart_init(0, rx_callback);  // Should get MAX_UART_PORTS
+    ports[3] = simulith_uart_init(1, rx_callback);  // Should get MAX_UART_PORTS + 1
+
+    // Test data for each pair
+    uint8_t test_data1[] = {0x11, 0x22};
+    uint8_t test_data2[] = {0x33, 0x44};
+
+    // Test first pair
+    simulith_uart_send(ports[0], test_data1, sizeof(test_data1));
+    TEST_ASSERT_EQUAL(ports[1], rx_port);
+    TEST_ASSERT_EQUAL_MEMORY(test_data1, rx_data, sizeof(test_data1));
+
+    // Test second pair
+    simulith_uart_send(ports[2], test_data2, sizeof(test_data2));
+    TEST_ASSERT_EQUAL(ports[3], rx_port);
+    TEST_ASSERT_EQUAL_MEMORY(test_data2, rx_data, sizeof(test_data2));
+}
+
 int main(void)
 {
     UNITY_BEGIN();
-
-    RUN_TEST(test_uart_init);
-    RUN_TEST(test_uart_send_receive);
-    RUN_TEST(test_uart_invalid_operations);
-    RUN_TEST(test_uart_multiple_ports);
-
+    RUN_TEST(test_uart_init_basic);
+    RUN_TEST(test_uart_init_auto_assignment);
+    RUN_TEST(test_uart_send_receive_basic);
+    RUN_TEST(test_uart_send_receive_extended_ports);
+    RUN_TEST(test_uart_send_receive_multiple_pairs);
     return UNITY_END();
 }

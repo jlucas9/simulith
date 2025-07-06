@@ -81,8 +81,16 @@ int simulith_server_init(const char *pub_bind, const char *rep_bind, int client_
 
 static void broadcast_time(void)
 {
+    static uint64_t last_log_time = 0;
+    static const uint64_t LOG_INTERVAL_NS = 10000000000; // Log every 10 seconds
+    
     zmq_send(publisher, &current_time_ns, sizeof(current_time_ns), 0);
-    simulith_log("Broadcasted time: %.3f sim seconds\n", current_time_ns / 1e9);
+    
+    // Only log time broadcasts every LOG_INTERVAL_NS
+    if (current_time_ns - last_log_time >= LOG_INTERVAL_NS) {
+        simulith_log("Simulation time: %.3f seconds\n", current_time_ns / 1e9);
+        last_log_time = current_time_ns;
+    }
 }
 
 static int all_clients_responded(void)

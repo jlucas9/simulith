@@ -1,167 +1,220 @@
 #include "simulith_uart.h"
 #include "simulith.h"
-#include <string.h>
 
 typedef struct
 {
-    bool                      initialized;
-    simulith_uart_rx_callback rx_callback;
-    uint8_t                   rx_buffer[RX_BUFFER_SIZE];
-    size_t                    rx_buffer_head;
-    size_t                    rx_buffer_tail;
+    uint8_t                   init;
+    uint8_t                   buffer[SIMULITH_UART_BUFFER_SIZE];
+    uint16_t                  buffer_len;
 } uart_port_t;
 
 // Array size is doubled to allow for MAX_UART_PORTS pairs
-static uart_port_t uart_ports[MAX_UART_PORTS * 2] = {0};
+static uart_port_t uart_ports[SIMULITH_MAX_UART_PORTS * 2] = {0};
 
-int simulith_uart_init(uint8_t port_id, simulith_uart_rx_callback rx_cb)
+int simulith_uart_init(uint8_t port_id, int32_t* handle)
 {
-    if (port_id >= MAX_UART_PORTS)
+    uint8_t pair_port = port_id + SIMULITH_MAX_UART_PORTS;
+
+    // Confirm received port ID valid
+    if (port_id >= SIMULITH_MAX_UART_PORTS)
     {
-        simulith_log("Invalid UART port ID: %d\n", port_id);
+        simulith_log("simulith_uart_init: Invalid UART port ID: %d\n", port_id);
         return -1;
     }
 
-    // Check if this port number is already connected
-    uint8_t actual_port = port_id;
-    uint8_t pair_port = (port_id % 2 == 0) ? port_id + 1 : port_id - 1;
-
-    if (uart_ports[port_id].initialized && uart_ports[pair_port].initialized)
+    // Check if already connected
+    if (uart_ports[port_id].init != SIMULITH_UART_INITIALIZED)
     {
-        // For extended ports, we want:
-        // port 0 -> 16 (MAX_UART_PORTS + 0)
-        // port 1 -> 17 (MAX_UART_PORTS + 1)
-        actual_port = MAX_UART_PORTS + port_id;
-
-        // If these ports are also taken, find next available pair
-        if (uart_ports[actual_port].initialized)
-        {
-            simulith_log("No available UART ports\n");
-            return -1;
-        }
+        *handle = port_id;
+        simulith_log("simulith_uart_init: First connection to UART %d. \n", *handle);
+    }
+    else if(uart_ports[pair_port].init != SIMULITH_UART_INITIALIZED)
+    {
+        *handle = pair_port;
+        simulith_log("simulith_uart_init: Second connection to UART %d. \n", *handle);
+    }
+    else
+    {
+        simulith_log("simulith_uart_init: UART initialization failed! Both UART connections of %d already initialized!\n", port_id);
+        return SIMULITH_UART_ERROR;
     }
 
-    uart_port_t *port = &uart_ports[actual_port];
+    // Register UART
+    uart_ports[*handle].init = SIMULITH_UART_INITIALIZED;
+    memset(uart_ports[*handle].buffer, 0, sizeof(uart_ports[*handle].buffer));
+    uart_ports[*handle].buffer_len = 0;
 
-    if (port->initialized)
-    {
-        simulith_log("UART port %d already initialized\n", actual_port);
-        return -1;
-    }
-
-    // Initialize port structure
-    port->rx_callback = rx_cb;
-    port->rx_buffer_head = 0;
-    port->rx_buffer_tail = 0;
-    port->initialized = true;
-
-    simulith_log("UART port %d initialized (requested %d)\n", actual_port, port_id);
-
-    return actual_port;  // Return the actual port number assigned
+    // Return success
+    simulith_log("simulith_uart_init: UART handle %d initialized (requested %d)\n", *handle, port_id);
+    return SIMULITH_UART_SUCCESS;
 }
 
-int simulith_uart_send(uint8_t port_id, const uint8_t *data, size_t len)
+int simulith_uart_send(uint32_t handle, const uint8_t *data, size_t len)
 {
-    if (port_id >= MAX_UART_PORTS * 2 || !uart_ports[port_id].initialized)
+    uint8_t port = 0;
+    uint16_t send_size = len;
+
+    // Confirm port valid
+    if (handle >= (SIMULITH_MAX_UART_PORTS * 2))
     {
-        return -1;
+        simulith_log("simulith_uart_send: Invalid UART handle %d\n", handle);
+        return SIMULITH_UART_ERROR;
     }
 
-    if (!data || len == 0)
+    // Confirm sending side initialized
+    if (uart_ports[handle].init != SIMULITH_UART_INITIALIZED)
     {
-        return -1;
+        simulith_log("simulith_uart_send: Uninitialized UART handle %d\n", handle);
+        return SIMULITH_UART_ERROR;
     }
+
+    // Determine destination port
+    if (handle >= SIMULITH_MAX_UART_PORTS)
+    {
+        port = handle - SIMULITH_MAX_UART_PORTS;
+    }
+    else
+    {
+        port = handle + SIMULITH_MAX_UART_PORTS;
+    }
+
+    // Confirm receiving side initialized
+    if (uart_ports[port].init != SIMULITH_UART_INITIALIZED)
+    {
+        simulith_log("simulith_uart_send: Receiving side %d not initialized\n", port);
+        return SIMULITH_UART_ERROR;
+    }
+
+    // Check if UART would overflow and truncate if so
+    if ((uart_ports[port].buffer_len + send_size) > SIMULITH_UART_BUFFER_SIZE)
+    {
+        send_size = SIMULITH_UART_BUFFER_SIZE - uart_ports[port].buffer_len;
+        simulith_log("simulith_uart_send: UART %d would overflow, sending %d / %d\n", port, send_size, len);
+    }
+
+    // Set data in receiving side
+    memcpy(&(uart_ports[port].buffer[uart_ports[port].buffer_len]), data, len);
+    uart_ports[port].buffer_len += len;
 
     // Log the data being sent
-    simulith_log("UART%d TX: ", port_id);
-    for (size_t i = 0; i < len; i++)
+    simulith_log("UART TX[%d]: ", port);
+    for (size_t i = 0; i < send_size; i++)
     {
         simulith_log("%02X ", data[i]);
     }
     simulith_log("\n");
 
-    // Send to the paired port (port pairs are 0-1, 2-3, 4-5, etc.)
-    uint8_t target_port = (port_id % 2 == 0) ? port_id + 1 : port_id - 1;
-    if (target_port < MAX_UART_PORTS * 2 && uart_ports[target_port].initialized && uart_ports[target_port].rx_callback)
-    {
-        uart_ports[target_port].rx_callback(target_port, data, len);
-    }
-
-    return len;
+    // Return the length of data sent
+    return send_size;
 }
 
-int simulith_uart_receive(uint8_t port_id, uint8_t *data, size_t max_len)
+int simulith_uart_receive(uint32_t handle, uint8_t *data, size_t max_len)
 {
-    if (port_id >= MAX_UART_PORTS * 2 || !uart_ports[port_id].initialized || !data || max_len == 0)
+    uint16_t receive_size = 0;
+
+    // Confirm port valid
+    if (handle >= (SIMULITH_MAX_UART_PORTS * 2))
     {
-        return -1;
+        simulith_log("simulith_uart_send: Invalid UART handle %d\n", handle);
+        return SIMULITH_UART_ERROR;
     }
 
-    uart_port_t *port = &uart_ports[port_id];
-    
-    // Calculate bytes available in the circular buffer
-    size_t bytes_available;
-    if (port->rx_buffer_head >= port->rx_buffer_tail)
+    //simulith_log("simulith_uart_receive: uart_ports[%d].buffer_len = %d\n", handle, uart_ports[handle].buffer_len);
+
+    // Determine length of receipt data
+    if (max_len >= (uart_ports[handle].buffer_len))
     {
-        bytes_available = port->rx_buffer_head - port->rx_buffer_tail;
+        // Move data
+        receive_size = uart_ports[handle].buffer_len;
+        memcpy(uart_ports[handle].buffer, data, receive_size);
+
+        // Update length
+        uart_ports[handle].buffer_len = 0;
     }
     else
     {
-        bytes_available = RX_BUFFER_SIZE - port->rx_buffer_tail + port->rx_buffer_head;
+        // Move data
+        receive_size = max_len;
+        memcpy(uart_ports[handle].buffer, data, receive_size);
+        
+        // Shift remaining data forward
+        memcpy(uart_ports[handle].buffer, &uart_ports[handle].buffer[receive_size], receive_size);
+        uart_ports[handle].buffer_len = uart_ports[handle].buffer_len - max_len;
     }
     
-    // Limit bytes to read
-    size_t bytes_to_read = (bytes_available < max_len) ? bytes_available : max_len;
-    
-    // Read data from the circular buffer
-    for (size_t i = 0; i < bytes_to_read; i++)
-    {
-        data[i] = port->rx_buffer[port->rx_buffer_tail];
-        port->rx_buffer_tail = (port->rx_buffer_tail + 1) % RX_BUFFER_SIZE;
-    }
-
     // Log received data
-    if (bytes_to_read > 0)
+    if (receive_size > 0)
     {
-        simulith_log("UART%d RX: ", port_id);
-        for (size_t i = 0; i < bytes_to_read; i++)
+        simulith_log("UART RX[%d]: ", handle);
+        for (size_t i = 0; i < receive_size; i++)
         {
             simulith_log("%02X ", data[i]);
         }
         simulith_log("\n");
     }
-
-    return bytes_to_read;
+    return receive_size;
 }
 
-int simulith_uart_available(uint8_t port_id)
+int simulith_uart_available(uint32_t handle)
 {
-    if (port_id >= MAX_UART_PORTS * 2 || !uart_ports[port_id].initialized)
+    // Confirm port valid
+    if (handle >= (SIMULITH_MAX_UART_PORTS * 2))
     {
-        return -1;
+        simulith_log("simulith_uart_available: Invalid UART handle %d\n", handle);
+        return SIMULITH_UART_ERROR;
     }
 
-    uart_port_t *port = &uart_ports[port_id];
-    
-    // Calculate bytes available in the circular buffer
-    if (port->rx_buffer_head >= port->rx_buffer_tail)
+    // Confirm port initialized
+    if (uart_ports[handle].init != SIMULITH_UART_INITIALIZED)
     {
-        return port->rx_buffer_head - port->rx_buffer_tail;
+        simulith_log("simulith_uart_available: Uninitialized UART handle %d\n", handle);
+        return SIMULITH_UART_ERROR;
     }
-    else
-    {
-        return RX_BUFFER_SIZE - port->rx_buffer_tail + port->rx_buffer_head;
-    }
+    //simulith_log("simulith_uart_available: uart_ports[%d].buffer_len = %d\n", handle, uart_ports[handle].buffer_len);
+    return uart_ports[handle].buffer_len;
 }
 
-int simulith_uart_close(uint8_t port_id)
+int simulith_uart_flush(uint32_t handle)
 {
-    if (port_id >= MAX_UART_PORTS * 2 || !uart_ports[port_id].initialized)
+    // Confirm port valid
+    if (handle >= (SIMULITH_MAX_UART_PORTS * 2))
     {
-        return -1;
+        simulith_log("simulith_uart_available: Invalid UART handle %d\n", handle);
+        return SIMULITH_UART_ERROR;
     }
 
-    uart_ports[port_id].initialized = false;
-    simulith_log("UART port %d closed\n", port_id);
-    return 0;
+    // Confirm port initialized
+    if (uart_ports[handle].init != SIMULITH_UART_INITIALIZED)
+    {
+        simulith_log("simulith_uart_available: Uninitialized UART handle %d\n", handle);
+        return SIMULITH_UART_ERROR;
+    }
+
+    // Set current buffer length to zero
+    uart_ports[handle].buffer_len = 0;
+    return SIMULITH_UART_SUCCESS;
+}
+
+int simulith_uart_close(uint32_t handle)
+{
+    // Confirm port valid
+    if (handle >= (SIMULITH_MAX_UART_PORTS * 2))
+    {
+        //simulith_log("simulith_uart_close: Invalid UART handle %d\n", handle);
+        return SIMULITH_UART_ERROR;
+    }
+
+    // Confirm port initialized
+    if (uart_ports[handle].init != SIMULITH_UART_INITIALIZED)
+    {
+        //simulith_log("simulith_uart_close: Uninitialized UART handle %d\n", handle);
+        return SIMULITH_UART_ERROR;
+    }
+
+    // Close out uart
+    uart_ports[handle].init = 0;
+    memset(uart_ports[handle].buffer, 0, sizeof(uart_ports[handle].buffer));
+    uart_ports[handle].buffer_len = 0;
+    simulith_log("UART port %d closed\n", handle);
+    return SIMULITH_UART_SUCCESS;
 }

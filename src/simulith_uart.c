@@ -52,6 +52,9 @@ int simulith_uart_init(uart_port_t *port)
         simulith_log("simulith_uart_init: Connected to %s as '%s'\n", port->address, port->name);
     }
     port->init = SIMULITH_UART_INITIALIZED;
+
+    // Initialize RX buffer
+    port->rx_buf_len = 0;
     return SIMULITH_UART_SUCCESS;
 }
 
@@ -76,21 +79,19 @@ int simulith_uart_receive(uart_port_t *port, uint8_t *data, size_t max_len)
         simulith_log("simulith_uart_receive: Uninitialized UART port\n");
         return SIMULITH_UART_ERROR;
     }
-    zmq_pollitem_t items[] = { { port->zmq_sock, 0, ZMQ_POLLIN, 0 } };
-    int rc = zmq_poll(items, 1, 0);
-    if (rc > 0 && (items[0].revents & ZMQ_POLLIN)) {
-        zmq_msg_t msg;
-        zmq_msg_init(&msg);
-        int size = zmq_msg_recv(&msg, port->zmq_sock, ZMQ_DONTWAIT);
-        if (size > 0 && (size_t)size <= max_len) {
-            memcpy(data, zmq_msg_data(&msg), size);
-            zmq_msg_close(&msg);
-            simulith_log("UART RX[%s]: %d bytes\n", port->name, size);
-            return size;
-        }
-        zmq_msg_close(&msg);
+    if (port->rx_buf_len == 0) {
+        // No buffered data
+        return 0;
     }
-    return 0;
+    size_t to_copy = (port->rx_buf_len < max_len) ? port->rx_buf_len : max_len;
+    memcpy(data, port->rx_buf, to_copy);
+    // Shift remaining data in buffer
+    if (to_copy < port->rx_buf_len) {
+        memmove(port->rx_buf, port->rx_buf + to_copy, port->rx_buf_len - to_copy);
+    }
+    port->rx_buf_len -= to_copy;
+    simulith_log("UART RX[%s]: %zu bytes (from buffer)\n", port->name, to_copy);
+    return (int)to_copy;
 }
 
 int simulith_uart_available(uart_port_t *port)
@@ -99,9 +100,32 @@ int simulith_uart_available(uart_port_t *port)
         simulith_log("simulith_uart_available: Uninitialized UART port\n");
         return SIMULITH_UART_ERROR;
     }
+    // If buffer already has data, report available
+    if (port->rx_buf_len > 0) {
+        return 1;
+    }
     zmq_pollitem_t items[] = { { port->zmq_sock, 0, ZMQ_POLLIN, 0 } };
     int rc = zmq_poll(items, 1, 0);
-    return (rc > 0 && (items[0].revents & ZMQ_POLLIN)) ? 1 : 0;
+    if (rc > 0 && (items[0].revents & ZMQ_POLLIN)) {
+        zmq_msg_t msg;
+        zmq_msg_init(&msg);
+        int size = zmq_msg_recv(&msg, port->zmq_sock, ZMQ_DONTWAIT);
+        if (size > 0) {
+            size_t space = sizeof(port->rx_buf) - port->rx_buf_len;
+            if ((size_t)size > space) {
+                simulith_log("UART RX[%s]: Buffer overflow, dropping %d bytes\n", port->name, size);
+                zmq_msg_close(&msg);
+                return 0;
+            }
+            memcpy(port->rx_buf + port->rx_buf_len, zmq_msg_data(&msg), size);
+            port->rx_buf_len += size;
+            zmq_msg_close(&msg);
+            simulith_log("UART RX[%s]: %d bytes buffered\n", port->name, size);
+            return 1;
+        }
+        zmq_msg_close(&msg);
+    }
+    return 0;
 }
 
 int simulith_uart_flush(uart_port_t *port)

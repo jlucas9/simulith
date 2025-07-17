@@ -25,15 +25,17 @@ extern "C"
 #endif
 
 
-    typedef struct
-    {
-        uint8_t     init;
-        char        name[32];      // Logical name for this UART endpoint (optional, for logging)
-        char        address[128];  // ZMQ endpoint (e.g. "tcp://127.0.0.1:6000")
-        int         is_server;     // 1 to bind, 0 to connect
-        void        *zmq_ctx;
-        void        *zmq_sock;
-    } uart_port_t;
+typedef struct {
+    char name[64];
+    char address[128];
+    int is_server;
+    void* zmq_ctx;
+    void* zmq_sock;
+    int init;
+    // RX buffer for incoming data
+    uint8_t rx_buf[1024];
+    size_t rx_buf_len;
+} uart_port_t;
 
     int simulith_uart_init(uart_port_t *port);
     int simulith_uart_send(uart_port_t *port, const uint8_t *data, size_t len);

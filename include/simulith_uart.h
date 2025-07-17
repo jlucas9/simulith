@@ -1,16 +1,21 @@
+/*
+ * Simulith UART - Requirements
+ *
+ * - Shall utilize ZMQ to communicate between nodes
+ * - Shall have functions to initialize, send, receive, check available, and flush data
+ * - Shall communicate directly to the other end of the node
+ * - Shall not block on any function
+ * - Shall fail gracefully if peer is unavailable and return error codes (non-zero) instead of crashing.
+ * - Shall not rely on a server as each node will be initialized with its name and destination.
+ */
+
 #ifndef SIMULITH_UART_H
 #define SIMULITH_UART_H
 
-#include <stddef.h>
-#include <stdint.h>
-#include <stdio.h>
-#include <string.h>
+#include "simulith.h"
 
 #define SIMULITH_UART_SUCCESS 0
 #define SIMULITH_UART_ERROR  -1
-
-#define SIMULITH_MAX_UART_PORTS 16
-#define SIMULITH_UART_BUFFER_SIZE 4096
 
 #define SIMULITH_UART_INITIALIZED 255
 
@@ -19,54 +24,23 @@ extern "C"
 {
 #endif
 
-    /**
-     * @brief Initialize a UART port
-     * @param port_id Port identifier
-     * @param handle Handle identifier
-     * @return SIMULITH_UART_SUCCESS on success, SIMULITH_UART_ERROR on failure
-     * @note Connects to port < SIMULITH_MAX_UART_PORTS, then port + SIMULITH_MAX_UART_PORTS
-     */
-    int simulith_uart_init(uint8_t port_id, int32_t* handle);
 
-    /**
-     * @brief Send data over UART
-     * @param handle Identifier
-     * @param data Data to send
-     * @param len Number of bytes to send
-     * @return Number of bytes sent, SIMULITH_UART_ERROR on failure
-     */
-    int simulith_uart_send(uint32_t handle, const uint8_t *data, size_t len);
+    typedef struct
+    {
+        uint8_t     init;
+        char        name[32];      // Logical name for this UART endpoint (optional, for logging)
+        char        address[128];  // ZMQ endpoint (e.g. "tcp://127.0.0.1:6000")
+        int         is_server;     // 1 to bind, 0 to connect
+        void        *zmq_ctx;
+        void        *zmq_sock;
+    } uart_port_t;
 
-    /**
-     * @brief Receive data from UART (non-blocking)
-     * @param handle Identifier
-     * @param data Buffer to store received data
-     * @param max_len Maximum number of bytes to receive
-     * @return Number of bytes received, SIMULITH_UART_ERROR on failure
-     */
-    int simulith_uart_receive(uint32_t handle, uint8_t *data, size_t max_len);
-
-    
-    /**
-     * @brief Check if UART port has data available
-     * @param handle Identifier
-     * @return Number of bytes available, SIMULITH_UART_ERROR on failure
-     */
-    int simulith_uart_available(uint32_t handle);
-
-    /**
-     * @brief Flush data to be received on UART port
-     * @param handle Identifier
-     * @return SIMULITH_UART_SUCCESS on success, SIMULITH_UART_ERROR on failure
-     */
-    int simulith_uart_flush(uint32_t handle);
-
-    /**
-     * @brief Close a UART port
-     * @param handle Identifier
-     * @return SIMULITH_UART_SUCCESS on success, SIMULITH_UART_ERROR on failure
-     */
-    int simulith_uart_close(uint32_t handle);
+    int simulith_uart_init(uart_port_t *port);
+    int simulith_uart_send(uart_port_t *port, const uint8_t *data, size_t len);
+    int simulith_uart_receive(uart_port_t *port, uint8_t *data, size_t max_len);
+    int simulith_uart_available(uart_port_t *port);
+    int simulith_uart_flush(uart_port_t *port);
+    int simulith_uart_close(uart_port_t *port);
 
 #ifdef __cplusplus
 }

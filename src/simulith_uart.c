@@ -1,220 +1,127 @@
+/*
+ * Simulith UART
+ *
+ * Requirements:
+ * - Shall utilize ZMQ to communicate between nodes
+ * - Shall have functions to initialize, send, receive, check available, and flush data
+ * - Shall communicate directly to the other end of the node
+ * - Shall not block on any function
+ * - Shall fail gracefully if peer is unavailable and return error codes (non-zero) instead of crashing
+ * - Shall not rely on a server as each node will be initialized with its name and destination
+*/
+
 #include "simulith_uart.h"
-#include "simulith.h"
 
-typedef struct
+int simulith_uart_init(uart_port_t *port)
 {
-    uint8_t                   init;
-    uint8_t                   buffer[SIMULITH_UART_BUFFER_SIZE];
-    uint16_t                  buffer_len;
-} uart_port_t;
+    if (!port) return SIMULITH_UART_ERROR;
+    if (port->init == SIMULITH_UART_INITIALIZED) return SIMULITH_UART_SUCCESS;
 
-// Array size is doubled to allow for MAX_UART_PORTS pairs
-static uart_port_t uart_ports[SIMULITH_MAX_UART_PORTS * 2] = {0};
-
-int simulith_uart_init(uint8_t port_id, int32_t* handle)
-{
-    uint8_t pair_port = port_id + SIMULITH_MAX_UART_PORTS;
-
-    // Confirm received port ID valid
-    if (port_id >= SIMULITH_MAX_UART_PORTS)
-    {
-        simulith_log("simulith_uart_init: Invalid UART port ID: %d\n", port_id);
-        return -1;
-    }
-
-    // Check if already connected
-    if (uart_ports[port_id].init != SIMULITH_UART_INITIALIZED)
-    {
-        *handle = port_id;
-        simulith_log("simulith_uart_init: First connection to UART %d. \n", *handle);
-    }
-    else if(uart_ports[pair_port].init != SIMULITH_UART_INITIALIZED)
-    {
-        *handle = pair_port;
-        simulith_log("simulith_uart_init: Second connection to UART %d. \n", *handle);
-    }
-    else
-    {
-        simulith_log("simulith_uart_init: UART initialization failed! Both UART connections of %d already initialized!\n", port_id);
+    port->zmq_ctx = zmq_ctx_new();
+    if (!port->zmq_ctx) {
+        simulith_log("simulith_uart_init: Failed to create ZMQ context\n");
         return SIMULITH_UART_ERROR;
     }
-
-    // Register UART
-    uart_ports[*handle].init = SIMULITH_UART_INITIALIZED;
-    memset(uart_ports[*handle].buffer, 0, sizeof(uart_ports[*handle].buffer));
-    uart_ports[*handle].buffer_len = 0;
-
-    // Return success
-    simulith_log("simulith_uart_init: UART handle %d initialized (requested %d)\n", *handle, port_id);
-    return SIMULITH_UART_SUCCESS;
-}
-
-int simulith_uart_send(uint32_t handle, const uint8_t *data, size_t len)
-{
-    uint8_t port = 0;
-    uint16_t send_size = len;
-
-    // Confirm port valid
-    if (handle >= (SIMULITH_MAX_UART_PORTS * 2))
-    {
-        simulith_log("simulith_uart_send: Invalid UART handle %d\n", handle);
+    port->zmq_sock = zmq_socket(port->zmq_ctx, ZMQ_PAIR);
+    if (!port->zmq_sock) {
+        simulith_log("simulith_uart_init: Failed to create ZMQ socket\n");
+        zmq_ctx_term(port->zmq_ctx);
         return SIMULITH_UART_ERROR;
     }
-
-    // Confirm sending side initialized
-    if (uart_ports[handle].init != SIMULITH_UART_INITIALIZED)
-    {
-        simulith_log("simulith_uart_send: Uninitialized UART handle %d\n", handle);
-        return SIMULITH_UART_ERROR;
+    if (strlen(port->name) > 0) {
+        zmq_setsockopt(port->zmq_sock, ZMQ_IDENTITY, port->name, strlen(port->name));
     }
-
-    // Determine destination port
-    if (handle >= SIMULITH_MAX_UART_PORTS)
-    {
-        port = handle - SIMULITH_MAX_UART_PORTS;
-    }
-    else
-    {
-        port = handle + SIMULITH_MAX_UART_PORTS;
-    }
-
-    // Confirm receiving side initialized
-    if (uart_ports[port].init != SIMULITH_UART_INITIALIZED)
-    {
-        simulith_log("simulith_uart_send: Receiving side %d not initialized\n", port);
-        return SIMULITH_UART_ERROR;
-    }
-
-    // Check if UART would overflow and truncate if so
-    if ((uart_ports[port].buffer_len + send_size) > SIMULITH_UART_BUFFER_SIZE)
-    {
-        send_size = SIMULITH_UART_BUFFER_SIZE - uart_ports[port].buffer_len;
-        simulith_log("simulith_uart_send: UART %d would overflow, sending %d / %d\n", port, send_size, len);
-    }
-
-    // Set data in receiving side
-    memcpy(&(uart_ports[port].buffer[uart_ports[port].buffer_len]), data, len);
-    uart_ports[port].buffer_len += len;
-
-    // Log the data being sent
-    simulith_log("UART TX[%d]: ", port);
-    for (size_t i = 0; i < send_size; i++)
-    {
-        simulith_log("%02X ", data[i]);
-    }
-    simulith_log("\n");
-
-    // Return the length of data sent
-    return send_size;
-}
-
-int simulith_uart_receive(uint32_t handle, uint8_t *data, size_t max_len)
-{
-    uint16_t receive_size = 0;
-
-    // Confirm port valid
-    if (handle >= (SIMULITH_MAX_UART_PORTS * 2))
-    {
-        simulith_log("simulith_uart_send: Invalid UART handle %d\n", handle);
-        return SIMULITH_UART_ERROR;
-    }
-
-    //simulith_log("simulith_uart_receive: uart_ports[%d].buffer_len = %d\n", handle, uart_ports[handle].buffer_len);
-
-    // Determine length of receipt data
-    if (max_len >= (uart_ports[handle].buffer_len))
-    {
-        // Move data
-        receive_size = uart_ports[handle].buffer_len;
-        memcpy(uart_ports[handle].buffer, data, receive_size);
-
-        // Update length
-        uart_ports[handle].buffer_len = 0;
-    }
-    else
-    {
-        // Move data
-        receive_size = max_len;
-        memcpy(uart_ports[handle].buffer, data, receive_size);
-        
-        // Shift remaining data forward
-        memcpy(uart_ports[handle].buffer, &uart_ports[handle].buffer[receive_size], receive_size);
-        uart_ports[handle].buffer_len = uart_ports[handle].buffer_len - max_len;
-    }
-    
-    // Log received data
-    if (receive_size > 0)
-    {
-        simulith_log("UART RX[%d]: ", handle);
-        for (size_t i = 0; i < receive_size; i++)
-        {
-            simulith_log("%02X ", data[i]);
+    int rc;
+    if (port->is_server) {
+        rc = zmq_bind(port->zmq_sock, port->address);
+        if (rc != 0) {
+            simulith_log("simulith_uart_init: Failed to bind to %s\n", port->address);
+            zmq_close(port->zmq_sock);
+            zmq_ctx_term(port->zmq_ctx);
+            return SIMULITH_UART_ERROR;
         }
-        simulith_log("\n");
+        simulith_log("simulith_uart_init: Bound to %s as '%s'\n", port->address, port->name);
+    } else {
+        rc = zmq_connect(port->zmq_sock, port->address);
+        if (rc != 0) {
+            simulith_log("simulith_uart_init: Failed to connect to %s\n", port->address);
+            zmq_close(port->zmq_sock);
+            zmq_ctx_term(port->zmq_ctx);
+            return SIMULITH_UART_ERROR;
+        }
+        simulith_log("simulith_uart_init: Connected to %s as '%s'\n", port->address, port->name);
     }
-    return receive_size;
-}
-
-int simulith_uart_available(uint32_t handle)
-{
-    // Confirm port valid
-    if (handle >= (SIMULITH_MAX_UART_PORTS * 2))
-    {
-        simulith_log("simulith_uart_available: Invalid UART handle %d\n", handle);
-        return SIMULITH_UART_ERROR;
-    }
-
-    // Confirm port initialized
-    if (uart_ports[handle].init != SIMULITH_UART_INITIALIZED)
-    {
-        simulith_log("simulith_uart_available: Uninitialized UART handle %d\n", handle);
-        return SIMULITH_UART_ERROR;
-    }
-    //simulith_log("simulith_uart_available: uart_ports[%d].buffer_len = %d\n", handle, uart_ports[handle].buffer_len);
-    return uart_ports[handle].buffer_len;
-}
-
-int simulith_uart_flush(uint32_t handle)
-{
-    // Confirm port valid
-    if (handle >= (SIMULITH_MAX_UART_PORTS * 2))
-    {
-        simulith_log("simulith_uart_available: Invalid UART handle %d\n", handle);
-        return SIMULITH_UART_ERROR;
-    }
-
-    // Confirm port initialized
-    if (uart_ports[handle].init != SIMULITH_UART_INITIALIZED)
-    {
-        simulith_log("simulith_uart_available: Uninitialized UART handle %d\n", handle);
-        return SIMULITH_UART_ERROR;
-    }
-
-    // Set current buffer length to zero
-    uart_ports[handle].buffer_len = 0;
+    port->init = SIMULITH_UART_INITIALIZED;
     return SIMULITH_UART_SUCCESS;
 }
 
-int simulith_uart_close(uint32_t handle)
+int simulith_uart_send(uart_port_t *port, const uint8_t *data, size_t len)
 {
-    // Confirm port valid
-    if (handle >= (SIMULITH_MAX_UART_PORTS * 2))
-    {
-        //simulith_log("simulith_uart_close: Invalid UART handle %d\n", handle);
+    if (!port || port->init != SIMULITH_UART_INITIALIZED) {
+        simulith_log("simulith_uart_send: Uninitialized UART port\n");
         return SIMULITH_UART_ERROR;
     }
-
-    // Confirm port initialized
-    if (uart_ports[handle].init != SIMULITH_UART_INITIALIZED)
-    {
-        //simulith_log("simulith_uart_close: Uninitialized UART handle %d\n", handle);
+    int rc = zmq_send(port->zmq_sock, data, len, ZMQ_DONTWAIT);
+    if (rc < 0) {
+        simulith_log("simulith_uart_send: zmq_send failed (peer may be unavailable)\n");
         return SIMULITH_UART_ERROR;
     }
+    simulith_log("UART TX[%s]: %zu bytes\n", port->name, len);
+    return (int)len;
+}
 
-    // Close out uart
-    uart_ports[handle].init = 0;
-    memset(uart_ports[handle].buffer, 0, sizeof(uart_ports[handle].buffer));
-    uart_ports[handle].buffer_len = 0;
-    simulith_log("UART port %d closed\n", handle);
+int simulith_uart_receive(uart_port_t *port, uint8_t *data, size_t max_len)
+{
+    if (!port || port->init != SIMULITH_UART_INITIALIZED) {
+        simulith_log("simulith_uart_receive: Uninitialized UART port\n");
+        return SIMULITH_UART_ERROR;
+    }
+    zmq_pollitem_t items[] = { { port->zmq_sock, 0, ZMQ_POLLIN, 0 } };
+    int rc = zmq_poll(items, 1, 0);
+    if (rc > 0 && (items[0].revents & ZMQ_POLLIN)) {
+        zmq_msg_t msg;
+        zmq_msg_init(&msg);
+        int size = zmq_msg_recv(&msg, port->zmq_sock, ZMQ_DONTWAIT);
+        if (size > 0 && (size_t)size <= max_len) {
+            memcpy(data, zmq_msg_data(&msg), size);
+            zmq_msg_close(&msg);
+            simulith_log("UART RX[%s]: %d bytes\n", port->name, size);
+            return size;
+        }
+        zmq_msg_close(&msg);
+    }
+    return 0;
+}
+
+int simulith_uart_available(uart_port_t *port)
+{
+    if (!port || port->init != SIMULITH_UART_INITIALIZED) {
+        simulith_log("simulith_uart_available: Uninitialized UART port\n");
+        return SIMULITH_UART_ERROR;
+    }
+    zmq_pollitem_t items[] = { { port->zmq_sock, 0, ZMQ_POLLIN, 0 } };
+    int rc = zmq_poll(items, 1, 0);
+    return (rc > 0 && (items[0].revents & ZMQ_POLLIN)) ? 1 : 0;
+}
+
+int simulith_uart_flush(uart_port_t *port)
+{
+    // For ZMQ, there is no direct flush, so just return success
+    if (!port || port->init != SIMULITH_UART_INITIALIZED) {
+        simulith_log("simulith_uart_flush: Uninitialized UART port\n");
+        return SIMULITH_UART_ERROR;
+    }
+    return SIMULITH_UART_SUCCESS;
+}
+
+int simulith_uart_close(uart_port_t *port)
+{
+    if (!port || port->init != SIMULITH_UART_INITIALIZED) {
+        return SIMULITH_UART_ERROR;
+    }
+    zmq_close(port->zmq_sock);
+    zmq_ctx_term(port->zmq_ctx);
+    port->init = 0;
+    simulith_log("UART port %s closed\n", port->name);
     return SIMULITH_UART_SUCCESS;
 }
